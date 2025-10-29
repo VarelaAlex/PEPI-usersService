@@ -221,6 +221,54 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
 	res.status(200).json({ inserted: response });
 });
 
+routerStudents.get("/pretrainingPhase", authenticateToken, isStudent, async (req, res) => {
+
+    let studentId = req.user.id;
+
+    try {
+        result = await database.query("SELECT s.pretrainingPhase FROM students s where s.id = ?", [studentId]);
+    }
+    catch ( e ) {
+        return res.status(500).json({ error: { type: "internalServerError", message: e } });
+    }
+    finally {
+
+    }
+
+    if ( result.length <= 0 ) {
+        return res.status(500).json({ error: { type: "internalServerError" } });
+    }
+
+    res.status(200).json(result[ 0 ]);
+});
+
+routerStudents.put("/pretrainingPhase", authenticateToken, isStudent, async (req, res) => {
+    const studentId = req.user.id;
+    const { pretrainingPhase } = req.body;
+
+    // Validación básica
+    if (pretrainingPhase === undefined) {
+        return res.status(400).json({ error: { type: "badRequest", message: "Missing pretrainingPhase value" } });
+    }
+
+    try {
+        const [result] = await database.query(
+            "UPDATE students SET pretrainingPhase = ? WHERE id = ?",
+            [pretrainingPhase, studentId]
+        );
+
+        // Comprobamos si realmente se modificó algo
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: { type: "notFound", message: "Student not found" } });
+        }
+
+        return res.status(200).json({ message: "pretrainingPhase updated successfully" });
+    }
+    catch (e) {
+        return res.status(500).json({ error: { type: "internalServerError", message: e.message } });
+    }
+});
+
 routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res) => {
 	let { studentId } = req.params;
 	let {
