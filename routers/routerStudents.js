@@ -271,9 +271,7 @@ routerStudents.put("/pretrainingPhase", authenticateToken, isStudent, async (req
 
 routerStudents.put("/updateEnabledExercise", authenticateToken, isStudent, async (req, res) => {
     const studentId = req.user.id;
-
-    // Orden lógico de los ejercicios
-    const EXERCISE_ORDER = ["I1", "I2", "I3", "M1", "M2", "M3", "S1", "S2", "S3"];
+	let {closedOrder} = req.body;
 
     try {
         // Obtener el ejercicio actual del alumno
@@ -292,29 +290,15 @@ routerStudents.put("/updateEnabledExercise", authenticateToken, isStudent, async
         }
 
         const currentExercise = rows[0].enabledExercises;
-        const currentIndex = EXERCISE_ORDER.indexOf(currentExercise);
 
-        if (currentIndex === -1) {
-            return res.status(400).json({
-                error: {
-                    type: "badRequest",
-                    message: "Invalid current exercise value."
-                }
-            });
-        }
+        const nextExercise = currentExercise <= closedOrder ? currentExercise + 1 : currentExercise;
 
-        // Calcular el siguiente ejercicio (si ya es el último, se queda igual)
-        const nextExercise =
-            EXERCISE_ORDER[currentIndex + 1] || EXERCISE_ORDER[currentIndex];
-
-        // Actualizar el campo en la base de datos
         await database.query(
             "UPDATE students SET enabledExercises = ? WHERE id = ?",
             [nextExercise, studentId]
         );
 
         return res.status(200).json({
-            message: `Enabled exercise updated from '${currentExercise}' to '${nextExercise}'.`,
             enabledExercises: nextExercise
         });
 
@@ -578,72 +562,6 @@ routerStudents.get("/enabledExercises", authenticateToken, isStudent, async (req
     }
 
     res.status(200).json(result[ 0 ]);
-});
-
-routerStudents.get("/completedExercises", authenticateToken, isStudent, async (req, res) => {
-
-    let studentId = req.user.id;
-    let result
-
-    try {
-        result = await database.query("SELECT se.exercise_id FROM student_exercises se where se.student_id = ?", [studentId]);
-    }
-    catch ( e ) {
-        return res.status(500).json({ error: { type: "internalServerError", message: e } });
-    }
-    finally {
-
-    }
-
-    if ( result.length <= 0 ) {
-        return res.status(500).json({ error: { type: "internalServerError" } });
-    }
-
-    res.status(200).json(result);
-});
-
-routerStudents.post("/completeExercise", authenticateToken, isStudent, async (req, res) => {
-    const studentId = req.user.id;
-    const { exercise_id } = req.body;
-
-    if (!exercise_id) {
-        return res.status(400).json({
-            error: {
-                type: "badRequest",
-                message: "'exercise_id' is required."
-            }
-        });
-    }
-
-    try {
-        // Comprobar si ya existe ese par (student_id, exercise_id)
-        const existing = await database.query(
-            "SELECT id FROM student_exercises WHERE student_id = ? AND exercise_id = ?",
-            [studentId, exercise_id]
-        );
-
-        if (existing.length > 0) {
-            return res.status(200).json({
-                message: "Exercise already marked as completed."
-            });
-        }
-
-        // Insertar el nuevo registro
-        const result = await database.query(
-            "INSERT INTO student_exercises (student_id, exercise_id) VALUES (?, ?)",
-            [studentId, exercise_id]
-        );
-
-        return res.status(201).json(result);
-    }
-    catch (e) {
-        return res.status(500).json({
-            error: {
-                type: "internalServerError",
-                message: e.message
-            }
-        });
-    }
 });
 
 routerStudents.get("/:studentId", authenticateToken, isTeacher, async (req, res) => {
