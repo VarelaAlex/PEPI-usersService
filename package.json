@@ -1,21 +1,29 @@
 {
+  "name": "pepi-exercisesService",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "keywords": [],
+  "author": "VarelaAlex",
+  "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "express": "^4.21.1",
     "jsonwebtoken": "^9.0.2",
     "jwa": "^2.0.1",
     "jws": "^4.0.0",
     "mysql": "^2.18.1",
-    "xlsx": "^0.18.5",
     "xslx": "^1.0.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "supertest": "^7.0.0"
-  },
-  "scripts": {
-    "start": "node app.js"
   }
 }
