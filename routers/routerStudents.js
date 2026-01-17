@@ -269,47 +269,41 @@ routerStudents.put("/pretrainingPhase", authenticateToken, isStudent, async (req
     }
 });
 
-routerStudents.put("/updateEnabledExercise", authenticateToken, isStudent, async (req, res) => {
-    const studentId = req.user.id;
-	let {closedOrder} = req.body;
+routerStudents.put("/guided/progress", authenticateToken, async (req, res) => {
+	const studentId = req.user.id;
+	const { index } = req.body;
+	if ( index === undefined || isNaN(index) || index < 0 ) {
+		return res.status(400).json({ error: { type: "badRequest", message: "Invalid index value" } });
+	}
 
-    try {
-        // Obtener el ejercicio actual del alumno
-        const rows = await database.query(
-            "SELECT enabledExercises FROM students WHERE id = ?",
-            [studentId]
-        );
+	await database.query(
+		"UPDATE students SET guidedIndex = GREATEST(guidedIndex, ?) WHERE id = ?",
+		[index + 1, studentId]
+	);
 
-        if (!rows || rows.length === 0) {
-            return res.status(404).json({
-                error: {
-                    type: "notFound",
-                    message: "Student not found."
-                }
-            });
-        }
+	res.json({ ok: true });
+});
 
-        const currentExercise = rows[0].enabledExercises;
+routerStudents.get("/guidedIndex", authenticateToken, isStudent, async (req, res) => {
 
-        const nextExercise = currentExercise <= closedOrder ? currentExercise + 1 : currentExercise;
+	let studentId = req.user.id;
+	let result;
 
-        await database.query(
-            "UPDATE students SET enabledExercises = ? WHERE id = ?",
-            [nextExercise, studentId]
-        );
+	try {
+		result = await database.query("SELECT s.guidedIndex FROM students s where s.id = ?", [studentId]);
+	}
+	catch ( e ) {
+		return res.status(500).json({ error: { type: "internalServerError", message: e } });
+	}
+	finally {
 
-        return res.status(200).json({
-            enabledExercises: nextExercise
-        });
+	}
 
-    } catch (e) {
-        return res.status(500).json({
-            error: {
-                type: "internalServerError",
-                message: e.message
-            }
-        });
-    }
+	if ( result.length <= 0 ) {
+		return res.status(500).json({ error: { type: "internalServerError" } });
+	}
+
+	res.status(200).json(result[ 0 ]);
 });
 
 routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res) => {
@@ -540,28 +534,6 @@ routerStudents.get("/currentStudent", authenticateToken, isStudent, async (req, 
 	}
 
 	res.status(200).json(result[ 0 ]);
-});
-
-routerStudents.get("/enabledExercises", authenticateToken, isStudent, async (req, res) => {
-
-    let studentId = req.user.id;
-    let result;
-
-    try {
-        result = await database.query("SELECT s.enabledExercises FROM students s where s.id = ?", [studentId]);
-    }
-    catch ( e ) {
-        return res.status(500).json({ error: { type: "internalServerError", message: e } });
-    }
-    finally {
-
-    }
-
-    if ( result.length <= 0 ) {
-        return res.status(500).json({ error: { type: "internalServerError" } });
-    }
-
-    res.status(200).json(result[ 0 ]);
 });
 
 routerStudents.get("/:studentId", authenticateToken, isTeacher, async (req, res) => {
