@@ -5,17 +5,42 @@ const {
       } = require("../auth");
 require("dotenv").config();
 
-let generateUsername = (name, lastName, classroomName) => {
-	/**
-	let cleanName = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, "");
-	let cleanLastName = lastName.normalize("NFD")
-	                            .replace(/[\u0300-\u036f]/g, "")
-	                            .trim()
-	                            .toLowerCase()
-	                            .replace(/\s+/g, "");
-	return cleanName + cleanLastName.charAt(0) + classroomNumber;
-	 */
-	return `${name.split(" ")[0]}${lastName.split(" ")[0]}${classroomName}`;
+const SEX_ENUM = [ "M", "F" ];
+
+let generateUsername = async (studentName, teacherId) => {
+	if ( !studentName?.trim() ) {
+		throw new Error("Student name is required");
+	}
+
+	// Normalizar el nombre igual que en el frontend
+	const normalizedName = studentName
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.split(" ")
+		.join("");
+
+	// Generar username con número aleatorio hasta encontrar uno disponible
+	let username = "";
+	let isAvailable = false;
+	let attempts = 0;
+	const maxAttempts = 10;
+
+	while ( !isAvailable && attempts < maxAttempts ) {
+		const randomNumber = Math.floor(Math.random() * 900) + 100;
+		username = `${normalizedName}${teacherId}${randomNumber}`;
+
+		// Verificar si el username existe
+		let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
+		isAvailable = response.length === 0;
+		attempts++;
+	}
+
+	if ( !isAvailable ) {
+		throw new Error("Could not generate an available username after multiple attempts");
+	}
+
+	return username;
 };
 
 const routerStudents = express.Router();
@@ -68,11 +93,34 @@ routerStudents.post("/login", async (req, res) => {
 	                     });
 });
 
+routerStudents.post("/checkUsername", authenticateToken, async (req, res) => {
+	let { username } = req.body;
+
+	if ( !username?.trim() ) {
+		return res.status(400).json({ error: { username: "students.checkUsername.error.username.empty" } });
+	}
+
+	try {
+		let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
+
+		if ( response.length > 0 ) {
+			return res.status(200).json({ exists: true });
+		} else {
+			return res.status(200).json({ exists: false });
+		}
+	}
+	catch ( e ) {
+		return res.status(500).json({ error: { type: "internalServerError", message: e.message || e } });
+	}
+});
+
+
 routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
 	let {
 		    name,
 		    lastName,
 		    age,
+			sex,
 		    classroomName,
 		    school,
 		    classroomNumber,
@@ -108,6 +156,14 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
 
 	if ( age < 0 ) {
 		return res.status(400).json({ error: { age: "classrooms.detail.create.error.age.negative" } });
+	}
+
+	if ( !sex ) {
+		return res.status(400).json({ error: { age: "classrooms.detail.create.error.sex.empty" } });
+	}
+
+	if ( !SEX_ENUM.includes(sex) ) {
+		return res.status(400).json({ error: { age: "classrooms.detail.create.error.sex.notAllowed" } });
 	}
 
 	if ( !classroomName?.trim() ) {
@@ -169,7 +225,7 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
 	}
 
 	// Generate username
-	let username = generateUsername(name, lastName, classroomName);
+	let username = await generateUsername(name, teacherId);
 
 	let response = null;
 	try {
@@ -189,12 +245,13 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
 
 		// Insert student into the database
 		response = await database.query(
-			"INSERT INTO students (username, name, lastName, age, school, classroomNumber, birthDate, classroomId, socioEconomicLevel, nationalOrigin, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			"INSERT INTO students (username, name, lastName, age, sex, school, classroomNumber, birthDate, classroomId, socioEconomicLevel, nationalOrigin, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 			[
 				username,
 				name,
 				lastName,
 				age,
+				sex,
 				school,
 				classroomNumber,
 				birthDate,
@@ -312,6 +369,7 @@ routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res)
 		    name,
 		    lastName,
 		    age,
+			sex,
 		    classroomId,
 		    school,
 		    classroomNumber,
@@ -345,18 +403,21 @@ routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res)
 		return res.status(400).json({ error: { lastName: "classrooms.detail.update.error.lastName.empty" } });
 	}
 
-	// Validate `age`
-	if ( age !== undefined ) {
-		if ( !age || age < 0 ) {
-			return res.status(400)
-			          .json({
-				                error: {
-					                age: age < 0
-					                     ? "classrooms.detail.update.error.age.negative"
-					                     : "classrooms.detail.update.error.age.empty"
-				                }
-			                });
-		}
+
+	if ( !age ) {
+		return res.status(400).json({ error: { age: "classrooms.detail.update.error.age.empty" } });
+	}
+
+	if ( age < 0 ) {
+		return res.status(400).json({ error: { age: "classrooms.detail.update.error.age.negative" } });
+	}
+
+	if ( !sex ) {
+		return res.status(400).json({ error: { age: "classrooms.detail.update.error.sex.empty" } });
+	}
+
+	if ( !SEX_ENUM.includes(sex) ) {
+		return res.status(400).json({ error: { age: "classrooms.detail.update.error.sex.notAllowed" } });
 	}
 
 	// Validate `birthDate`
@@ -434,6 +495,7 @@ routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res)
             SET name                          = COALESCE(?, name),
                 lastName                      = COALESCE(?, lastName),
                 age                           = COALESCE(?, age),
+                sex                           = COALESCE(?, sex),
                 classroomId                   = COALESCE(?, classroomId),
                 school                        = COALESCE(?, school),
                 classroomNumber               = COALESCE(?, classroomNumber),
@@ -454,6 +516,7 @@ routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res)
 			   name,
 			   lastName,
 			   age,
+			   sex,
 			   classroomId,
 			   school,
 			   classroomNumber,
