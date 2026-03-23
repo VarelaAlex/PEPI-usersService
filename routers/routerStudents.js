@@ -1,281 +1,243 @@
 const express = require("express");
 const database = require("../database");
 const {
-	      generateTokens, authenticateToken, isStudent, isTeacher
-      } = require("../auth");
+    generateTokens, authenticateToken, isStudent, isTeacher
+} = require("../auth");
 require("dotenv").config();
 
-const SEX_ENUM = [ "M", "F" ];
+const SEX_ENUM = ["M", "F"];
 
 let generateUsername = async (studentName, teacherId) => {
-	if ( !studentName?.trim() ) {
-		throw new Error("Student name is required");
-	}
+    if (!studentName?.trim()) {
+        throw new Error("Student name is required");
+    }
 
-	// Normalizar el nombre igual que en el frontend
-	const normalizedName = studentName
-		.toLowerCase()
-		.normalize("NFD")
-		.replace(/[\u0300-\u036f]/g, "")
-		.split(" ")
-		.join("");
+    // Normalizar el nombre igual que en el frontend
+    const normalizedName = studentName
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .split(" ")
+        .join("");
 
-	// Generar username con número aleatorio hasta encontrar uno disponible
-	let username = "";
-	let isAvailable = false;
-	let attempts = 0;
-	const maxAttempts = 10;
+    // Generar username con número aleatorio hasta encontrar uno disponible
+    let username = "";
+    let isAvailable = false;
+    let attempts = 0;
+    const maxAttempts = 10;
 
-	while ( !isAvailable && attempts < maxAttempts ) {
-		const randomNumber = Math.floor(Math.random() * 900) + 100;
-		username = `${normalizedName}${teacherId}${randomNumber}`;
+    while (!isAvailable && attempts < maxAttempts) {
+        const randomNumber = Math.floor(Math.random() * 900) + 100;
+        username = `${normalizedName}${teacherId}${randomNumber}`;
 
-		// Verificar si el username existe
-		let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
-		isAvailable = response.length === 0;
-		attempts++;
-	}
+        // Verificar si el username existe
+        let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
+        isAvailable = response.length === 0;
+        attempts++;
+    }
 
-	if ( !isAvailable ) {
-		throw new Error("Could not generate an available username after multiple attempts");
-	}
+    if (!isAvailable) {
+        throw new Error("Could not generate an available username after multiple attempts");
+    }
 
-	return username;
+    return username;
 };
 
 const routerStudents = express.Router();
 
 routerStudents.post("/login", async (req, res) => {
 
-	let { username } = req.body;
+    let {username} = req.body;
 
-	if ( !username?.trim() ) {
-		return res.status(400).json({ error: { username: "login.error.username.empty" } });
-	}
+    if (!username?.trim()) {
+        return res.status(400).json({error: {username: "login.error.username.empty"}});
+    }
 
-	let response = null;
-	try {
-		response = await database.query("SELECT id, username, name FROM students WHERE username = ?", [username]);
+    let response = null;
+    try {
+        response = await database.query("SELECT id, username, name, avatarEnabled FROM students WHERE username = ?", [username]);
 
-		if ( !response[ 0 ] || !response[ 0 ].username || response[ 0 ].username.length <= 0 ) {
-			return res.status(404).json({ error: { email: "login.error.username.notExist" } });
-		}
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+        if (!response[0] || !response[0].username || response[0].username.length <= 0) {
+            return res.status(404).json({error: {email: "login.error.username.notExist"}});
+        }
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	let user = {
-		username: response[ 0 ].username, id: response[ 0 ].id, role: "student"
-	};
+    let user = {
+        username: response[0].username, id: response[0].id, role: "student"
+    };
 
-	let tokens = generateTokens(user);
+    let tokens = generateTokens(user);
 
-	try {
-		await database.query("INSERT INTO refreshTokens (refreshToken) VALUES (?)", [tokens.refreshToken]);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+    try {
+        await database.query("INSERT INTO refreshTokens (refreshToken) VALUES (?)", [tokens.refreshToken]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	res.status(200).json({
-		                     accessToken:  tokens.accessToken,
-		                     refreshToken: tokens.refreshToken,
-		                     name:         response[ 0 ].name,
-							 id: response[0].id,
-							 username:  response[ 0 ].username
-	                     });
+    res.status(200).json({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        name: response[0].name,
+        id: response[0].id,
+        username: response[0].username,
+        avatarEnabled: response[0].avatarEnabled
+    });
 });
 
 routerStudents.post("/checkUsername", authenticateToken, async (req, res) => {
-	let { username } = req.body;
+    let {username} = req.body;
 
-	if ( !username?.trim() ) {
-		return res.status(400).json({ error: { username: "students.checkUsername.error.username.empty" } });
-	}
+    if (!username?.trim()) {
+        return res.status(400).json({error: {username: "students.checkUsername.error.username.empty"}});
+    }
 
-	try {
-		let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
+    try {
+        let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
 
-		if ( response.length > 0 ) {
-			return res.status(200).json({ exists: true });
-		} else {
-			return res.status(200).json({ exists: false });
-		}
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e.message || e } });
-	}
+        if (response.length > 0) {
+            return res.status(200).json({exists: true});
+        } else {
+            return res.status(200).json({exists: false});
+        }
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e.message || e}});
+    }
 });
 
 
 routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
-	let {
-		    name,
-		    lastName,
-		    age,
-			sex,
-		    classroomName,
-		    school,
-		    classroomNumber,
-		    birthDate,
-		    socioEconomicLevel,
-		    nationalOrigin,
-		    otherNationalOrigin,
-		    learningReadingRisk,
-		    learningWritingRisk,
-		    familyBackground,
-		    specificSupportNeeds,
-		    otherSpecificSupportNeeds,
-		    learningDiagnosedDifficulties,
-		    educationalSupport,
-		    otherEducationalSupport,
-		    firstWords
-	    } = req.body;
+    let {
+        name,
+        lastName,
+        age,
+        sex,
+        classroomName,
+        school,
+        classroomNumber,
+        birthDate,
+        socioEconomicLevel,
+        nationalOrigin,
+        otherNationalOrigin,
+        learningReadingRisk,
+        learningWritingRisk,
+        familyBackground,
+        specificSupportNeeds,
+        otherSpecificSupportNeeds,
+        learningDiagnosedDifficulties,
+        educationalSupport,
+        otherEducationalSupport,
+        firstWords
+    } = req.body;
 
-	let teacherId = req.user?.id;
+    let teacherId = req.user?.id;
 
-	// Basic validation for required fields
-	if ( !name?.trim() ) {
-		return res.status(400).json({ error: { name: "classrooms.detail.create.error.name.empty" } });
-	}
+    // Basic validation for required fields
+    if (!name?.trim()) {
+        return res.status(400).json({error: {name: "classrooms.detail.create.error.name.empty"}});
+    }
 
-	if ( !lastName?.trim() ) {
-		return res.status(400).json({ error: { lastName: "classrooms.detail.create.error.lastName.empty" } });
-	}
+    if (!lastName?.trim()) {
+        return res.status(400).json({error: {lastName: "classrooms.detail.create.error.lastName.empty"}});
+    }
 
-	if ( !age ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.create.error.age.empty" } });
-	}
+    if (!age) {
+        return res.status(400).json({error: {age: "classrooms.detail.create.error.age.empty"}});
+    }
 
-	if ( age < 0 ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.create.error.age.negative" } });
-	}
+    if (age < 0) {
+        return res.status(400).json({error: {age: "classrooms.detail.create.error.age.negative"}});
+    }
 
-	if ( !sex ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.create.error.sex.empty" } });
-	}
+    if (!sex) {
+        return res.status(400).json({error: {age: "classrooms.detail.create.error.sex.empty"}});
+    }
 
-	if ( !SEX_ENUM.includes(sex) ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.create.error.sex.notAllowed" } });
-	}
+    if (!SEX_ENUM.includes(sex)) {
+        return res.status(400).json({error: {age: "classrooms.detail.create.error.sex.notAllowed"}});
+    }
 
-	if ( !classroomName?.trim() ) {
-		return res.status(400).json({ error: { classroomName: "classrooms.detail.create.error.classroom.empty" } });
-	}
+    if (!classroomName?.trim()) {
+        return res.status(400).json({error: {classroomName: "classrooms.detail.create.error.classroom.empty"}});
+    }
 
-	// Validate birthDate format
-	if ( !birthDate || isNaN(new Date(birthDate).getTime()) ) {
-		return res.status(400).json({ error: { birthDate: "classrooms.detail.create.error.birthDate.invalid" } });
-	} else {
-		birthDate = birthDate.split("T")[ 0 ];
-	}
+    // Validate birthDate format
+    if (!birthDate || isNaN(new Date(birthDate).getTime())) {
+        return res.status(400).json({error: {birthDate: "classrooms.detail.create.error.birthDate.invalid"}});
+    } else {
+        birthDate = birthDate.split("T")[0];
+    }
 
-	if ( learningReadingRisk ) {
-		learningReadingRisk = learningReadingRisk === "si";
-	}
+    if (learningReadingRisk) {
+        learningReadingRisk = learningReadingRisk === "si";
+    }
 
-	if ( learningWritingRisk ) {
-		learningWritingRisk = learningWritingRisk === "si";
-	}
+    if (learningWritingRisk) {
+        learningWritingRisk = learningWritingRisk === "si";
+    }
 
-	// Process `otherSpecificSupportNeeds`
-	if ( otherSpecificSupportNeeds && Array.isArray(otherSpecificSupportNeeds) ) {
-		if ( !specificSupportNeeds.includes("otro") ) {
-			otherSpecificSupportNeeds = null;
-		} else {
-			otherSpecificSupportNeeds = otherSpecificSupportNeeds.join(";");
-		}
-	}
+    // Process `otherSpecificSupportNeeds`
+    if (otherSpecificSupportNeeds && Array.isArray(otherSpecificSupportNeeds)) {
+        if (!specificSupportNeeds.includes("otro")) {
+            otherSpecificSupportNeeds = null;
+        } else {
+            otherSpecificSupportNeeds = otherSpecificSupportNeeds.join(";");
+        }
+    }
 
-	// Process `specificSupportNeeds`
-	if ( specificSupportNeeds && Array.isArray(specificSupportNeeds) ) {
-		specificSupportNeeds =
-			specificSupportNeeds.filter(e => (
-				e !== "otro"
-			)).join(";");
-	}
+    // Process `specificSupportNeeds`
+    if (specificSupportNeeds && Array.isArray(specificSupportNeeds)) {
+        specificSupportNeeds = specificSupportNeeds.filter(e => (e !== "otro")).join(";");
+    }
 
-	// Process `otherEducationalSupport`
-	if ( otherEducationalSupport && Array.isArray(otherEducationalSupport) ) {
-		if ( !educationalSupport.includes("otros") ) {
-			otherEducationalSupport = null;
-		} else {
-			otherEducationalSupport = otherEducationalSupport.join(";");
-		}
-	}
+    // Process `otherEducationalSupport`
+    if (otherEducationalSupport && Array.isArray(otherEducationalSupport)) {
+        if (!educationalSupport.includes("otros")) {
+            otherEducationalSupport = null;
+        } else {
+            otherEducationalSupport = otherEducationalSupport.join(";");
+        }
+    }
 
-	// Process `educationalSupport`
-	if ( educationalSupport && Array.isArray(educationalSupport) ) {
-		educationalSupport =
-			educationalSupport.filter(e => (
-				e !== "otros"
-			)).join(";");
-	}
+    // Process `educationalSupport`
+    if (educationalSupport && Array.isArray(educationalSupport)) {
+        educationalSupport = educationalSupport.filter(e => (e !== "otros")).join(";");
+    }
 
-	// Process 'learningDiagnosedDifficulties'
-	if ( learningDiagnosedDifficulties && Array.isArray(learningDiagnosedDifficulties) ) {
-		learningDiagnosedDifficulties = learningDiagnosedDifficulties.join(";");
-	}
+    // Process 'learningDiagnosedDifficulties'
+    if (learningDiagnosedDifficulties && Array.isArray(learningDiagnosedDifficulties)) {
+        learningDiagnosedDifficulties = learningDiagnosedDifficulties.join(";");
+    }
 
-	// Generate username
-	let username = await generateUsername(name, teacherId);
+    // Generate username
+    let username = await generateUsername(name, teacherId);
 
-	let response = null;
-	try {
-		// Retrieve classroom ID
-		let classroomResult = await database.query(
-			"SELECT id FROM classrooms WHERE name = ? AND teacherId = ?",
-			[classroomName, teacherId]
-		);
-		if ( classroomResult.length === 0 ) {
-			return res.status(400).json({ error: { classroom: "classrooms.detail.create.error.classroom.notFound" } });
-		}
+    let response = null;
+    try {
+        // Retrieve classroom ID
+        let classroomResult = await database.query("SELECT id FROM classrooms WHERE name = ? AND teacherId = ?", [classroomName, teacherId]);
+        if (classroomResult.length === 0) {
+            return res.status(400).json({error: {classroom: "classrooms.detail.create.error.classroom.notFound"}});
+        }
 
-		let classroomId = classroomResult[ 0 ].id;
+        let classroomId = classroomResult[0].id;
 
-		// Handle nationalOrigin 'other' case
-		nationalOrigin = nationalOrigin === "otro" ? otherNationalOrigin : nationalOrigin;
+        // Handle nationalOrigin 'other' case
+        nationalOrigin = nationalOrigin === "otro" ? otherNationalOrigin : nationalOrigin;
 
-		// Insert student into the database
-		response = await database.query(
-			"INSERT INTO students (username, name, lastName, age, sex, school, classroomNumber, birthDate, classroomId, socioEconomicLevel, nationalOrigin, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			[
-				username,
-				name,
-				lastName,
-				age,
-				sex,
-				school,
-				classroomNumber,
-				birthDate,
-				classroomId,
-				socioEconomicLevel || null,
-				nationalOrigin || null,
-				learningReadingRisk,
-				learningWritingRisk,
-				familyBackground,
-				specificSupportNeeds,
-				otherSpecificSupportNeeds,
-				learningDiagnosedDifficulties,
-				educationalSupport,
-				otherEducationalSupport,
-				firstWords
-			]
-		);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e.message || e } });
-	}
+        // Insert student into the database
+        response = await database.query("INSERT INTO students (username, name, lastName, age, sex, school, classroomNumber, birthDate, classroomId, socioEconomicLevel, nationalOrigin, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [username, name, lastName, age, sex, school, classroomNumber, birthDate, classroomId, socioEconomicLevel || null, nationalOrigin || null, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e.message || e}});
+    }
 
-	// Respond with the result of the insert
-	res.status(200).json({ inserted: response });
+    // Respond with the result of the insert
+    res.status(200).json({inserted: response});
 });
 
 routerStudents.get("/pretrainingPhase", authenticateToken, isStudent, async (req, res) => {
@@ -284,213 +246,227 @@ routerStudents.get("/pretrainingPhase", authenticateToken, isStudent, async (req
 
     try {
         result = await database.query("SELECT s.pretrainingPhase FROM students s where s.id = ?", [studentId]);
-    }
-    catch ( e ) {
-        return res.status(500).json({ error: { type: "internalServerError", message: e } });
-    }
-    finally {
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
     }
 
-    if ( result.length <= 0 ) {
-        return res.status(500).json({ error: { type: "internalServerError" } });
+    if (result.length <= 0) {
+        return res.status(500).json({error: {type: "internalServerError"}});
     }
 
-    res.status(200).json(result[ 0 ]);
+    res.status(200).json(result[0]);
 });
 
 routerStudents.put("/pretrainingPhase", authenticateToken, isStudent, async (req, res) => {
     const studentId = req.user.id;
-    const { pretrainingPhase } = req.body;
+    const {pretrainingPhase} = req.body;
 
     // Validación básica
     if (pretrainingPhase === undefined) {
-        return res.status(400).json({ error: { type: "badRequest", message: "Missing pretrainingPhase value" } });
+        return res.status(400).json({error: {type: "badRequest", message: "Missing pretrainingPhase value"}});
     }
 
     try {
-        const [result] = await database.query(
-            "UPDATE students SET pretrainingPhase = ? WHERE id = ?",
-            [pretrainingPhase, studentId]
-        );
+        const [result] = await database.query("UPDATE students SET pretrainingPhase = ? WHERE id = ?", [pretrainingPhase, studentId]);
 
         // Comprobamos si realmente se modificó algo
         if (result.affectedRows === 0) {
-            return res.status(404).json({ error: { type: "notFound", message: "Student not found" } });
+            return res.status(404).json({error: {type: "notFound", message: "Student not found"}});
         }
 
-        return res.status(200).json({ message: "pretrainingPhase updated successfully" });
-    }
-    catch (e) {
-        return res.status(500).json({ error: { type: "internalServerError", message: e.message } });
+        return res.status(200).json({message: "pretrainingPhase updated successfully"});
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e.message}});
     }
 });
 
 routerStudents.put("/guided/progress", authenticateToken, async (req, res) => {
-	const studentId = req.user.id;
-	const { index } = req.body;
-	if ( index === undefined || isNaN(index) || index < 0 ) {
-		return res.status(400).json({ error: { type: "badRequest", message: "Invalid index value" } });
-	}
+    const studentId = req.user.id;
+    const {index} = req.body;
+    if (index === undefined || isNaN(index) || index < 0) {
+        return res.status(400).json({error: {type: "badRequest", message: "Invalid index value"}});
+    }
 
-	await database.query(
-		"UPDATE students SET guidedIndex = GREATEST(guidedIndex, ?) WHERE id = ?",
-		[index + 1, studentId]
-	);
+    await database.query("UPDATE students SET guidedIndex = GREATEST(guidedIndex, ?) WHERE id = ?", [index + 1, studentId]);
 
-	res.json({ ok: true });
+    res.json({ok: true});
 });
 
 routerStudents.get("/guidedIndex", authenticateToken, isStudent, async (req, res) => {
 
-	let studentId = req.user.id;
-	let result;
+    let studentId = req.user.id;
+    let result;
 
-	try {
-		result = await database.query("SELECT s.guidedIndex FROM students s where s.id = ?", [studentId]);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+    try {
+        result = await database.query("SELECT s.guidedIndex FROM students s where s.id = ?", [studentId]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	if ( result.length <= 0 ) {
-		return res.status(500).json({ error: { type: "internalServerError" } });
-	}
+    if (result.length <= 0) {
+        return res.status(500).json({error: {type: "internalServerError"}});
+    }
 
-	res.status(200).json(result[ 0 ]);
+    res.status(200).json(result[0]);
+});
+
+routerStudents.put("/avatar/student/:studentId", authenticateToken, isTeacher, async (req, res) => {
+    let {studentId} = req.params;
+    let {avatarEnabled} = req.body;
+
+    if (!studentId?.trim()) {
+        return res.status(400).json({error: {id: "classrooms.detail.update.error.id"}});
+    }
+
+    if (avatarEnabled === undefined) {
+        return res.status(400).json({error: {age: "classrooms.detail.update.error.avatar"}});
+    }
+
+    try {
+        // Update the student in the database
+        response = await database.query(`
+            UPDATE students
+            SET avatarEnabled = ?
+            WHERE id = ?
+        `, [avatarEnabled, studentId]);
+
+        if (response.affectedRows === 0) {
+            return res.status(404).json({error: {id: "classrooms.detail.update.error.notFound"}});
+        }
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e.message || e}});
+    }
+
+    // Respond with the result of the update
+    res.status(200).json({updated: response});
 });
 
 routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res) => {
-	let { studentId } = req.params;
-	let {
-		    name,
-		    lastName,
-		    age,
-			sex,
-		    classroomId,
-		    school,
-		    classroomNumber,
-		    birthDate,
-		    socioEconomicLevel,
-		    nationalOrigin,
-		    otherNationalOrigin,
-		    learningReadingRisk,
-		    learningWritingRisk,
-		    familyBackground,
-		    specificSupportNeeds,
-		    otherSpecificSupportNeeds,
-		    learningDiagnosedDifficulties,
-		    educationalSupport,
-		    otherEducationalSupport,
-		    firstWords
-	    } = req.body;
+    let {studentId} = req.params;
+    let {
+        name,
+        lastName,
+        age,
+        sex,
+        classroomId,
+        school,
+        classroomNumber,
+        birthDate,
+        socioEconomicLevel,
+        nationalOrigin,
+        otherNationalOrigin,
+        learningReadingRisk,
+        learningWritingRisk,
+        familyBackground,
+        specificSupportNeeds,
+        otherSpecificSupportNeeds,
+        learningDiagnosedDifficulties,
+        educationalSupport,
+        otherEducationalSupport,
+        firstWords
+    } = req.body;
 
-	// Validate `studentId`
-	if ( !studentId?.trim() ) {
-		return res.status(400).json({ error: { id: "classrooms.detail.update.error.id" } });
-	}
+    // Validate `studentId`
+    if (!studentId?.trim()) {
+        return res.status(400).json({error: {id: "classrooms.detail.update.error.id"}});
+    }
 
-	// Validate `name`
-	if ( name !== undefined && !name?.trim() ) {
-		return res.status(400).json({ error: { name: "classrooms.detail.update.error.name.empty" } });
-	}
+    // Validate `name`
+    if (name !== undefined && !name?.trim()) {
+        return res.status(400).json({error: {name: "classrooms.detail.update.error.name.empty"}});
+    }
 
-	// Validate `lastName`
-	if ( lastName !== undefined && !lastName?.trim() ) {
-		return res.status(400).json({ error: { lastName: "classrooms.detail.update.error.lastName.empty" } });
-	}
+    // Validate `lastName`
+    if (lastName !== undefined && !lastName?.trim()) {
+        return res.status(400).json({error: {lastName: "classrooms.detail.update.error.lastName.empty"}});
+    }
 
 
-	if ( !age ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.update.error.age.empty" } });
-	}
+    if (!age) {
+        return res.status(400).json({error: {age: "classrooms.detail.update.error.age.empty"}});
+    }
 
-	if ( age < 0 ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.update.error.age.negative" } });
-	}
+    if (age < 0) {
+        return res.status(400).json({error: {age: "classrooms.detail.update.error.age.negative"}});
+    }
 
-	if ( !sex ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.update.error.sex.empty" } });
-	}
+    if (!sex) {
+        return res.status(400).json({error: {age: "classrooms.detail.update.error.sex.empty"}});
+    }
 
-	if ( !SEX_ENUM.includes(sex) ) {
-		return res.status(400).json({ error: { age: "classrooms.detail.update.error.sex.notAllowed" } });
-	}
+    if (!SEX_ENUM.includes(sex)) {
+        return res.status(400).json({error: {age: "classrooms.detail.update.error.sex.notAllowed"}});
+    }
 
-	// Validate `birthDate`
-	if ( birthDate !== undefined ) {
-		if ( !birthDate || isNaN(new Date(birthDate).getTime()) ) {
-			return res.status(400).json({ error: { birthDate: "classrooms.detail.update.error.birthDate.invalid" } });
-		} else {
-			birthDate = birthDate.split("T")[ 0 ];
-		}
-	}
+    // Validate `birthDate`
+    if (birthDate !== undefined) {
+        if (!birthDate || isNaN(new Date(birthDate).getTime())) {
+            return res.status(400).json({error: {birthDate: "classrooms.detail.update.error.birthDate.invalid"}});
+        } else {
+            birthDate = birthDate.split("T")[0];
+        }
+    }
 
-	// Validate `classroomId`
-	if ( classroomId !== undefined && !classroomId ) {
-		return res.status(400).json({ error: { classroomName: "classrooms.detail.update.error.classroom.empty" } });
-	}
+    // Validate `classroomId`
+    if (classroomId !== undefined && !classroomId) {
+        return res.status(400).json({error: {classroomName: "classrooms.detail.update.error.classroom.empty"}});
+    }
 
-	// Validate and process `learningReadingRisk`
-	if ( learningReadingRisk !== undefined ) {
-		learningReadingRisk = learningReadingRisk === "si";
-	}
+    // Validate and process `learningReadingRisk`
+    if (learningReadingRisk !== undefined) {
+        learningReadingRisk = learningReadingRisk === "si";
+    }
 
-	// Validate and process `learningWritingRisk`
-	if ( learningWritingRisk !== undefined ) {
-		learningWritingRisk = learningWritingRisk === "si";
-	}
+    // Validate and process `learningWritingRisk`
+    if (learningWritingRisk !== undefined) {
+        learningWritingRisk = learningWritingRisk === "si";
+    }
 
-	// Process `otherSpecificSupportNeeds`
-	if ( otherSpecificSupportNeeds && Array.isArray(otherSpecificSupportNeeds) ) {
-		if ( !specificSupportNeeds.includes("otro") ) {
-			otherSpecificSupportNeeds = null;
-		}
-	}
+    // Process `otherSpecificSupportNeeds`
+    if (otherSpecificSupportNeeds && Array.isArray(otherSpecificSupportNeeds)) {
+        if (!specificSupportNeeds.includes("otro")) {
+            otherSpecificSupportNeeds = null;
+        }
+    }
 
-	// Process `specificSupportNeeds`
-	if ( specificSupportNeeds && Array.isArray(specificSupportNeeds) ) {
-		specificSupportNeeds =
-			specificSupportNeeds.filter(e => (
-				e !== "otro"
-			)).join(";");
-	}
+    // Process `specificSupportNeeds`
+    if (specificSupportNeeds && Array.isArray(specificSupportNeeds)) {
+        specificSupportNeeds = specificSupportNeeds.filter(e => (e !== "otro")).join(";");
+    }
 
-	// Process `otherEducationalSupport`
-	if ( otherEducationalSupport && Array.isArray(otherEducationalSupport) ) {
-		if ( !educationalSupport.includes("otros") ) {
-			otherEducationalSupport = null;
-		} else {
-			otherEducationalSupport = otherEducationalSupport.join(";");
-		}
-	}
+    // Process `otherEducationalSupport`
+    if (otherEducationalSupport && Array.isArray(otherEducationalSupport)) {
+        if (!educationalSupport.includes("otros")) {
+            otherEducationalSupport = null;
+        } else {
+            otherEducationalSupport = otherEducationalSupport.join(";");
+        }
+    }
 
-	// Process `educationalSupport`
-	if ( educationalSupport && Array.isArray(educationalSupport) ) {
-		educationalSupport =
-			educationalSupport.filter(e => (
-				e !== "otros"
-			)).join(";");
-	}
+    // Process `educationalSupport`
+    if (educationalSupport && Array.isArray(educationalSupport)) {
+        educationalSupport = educationalSupport.filter(e => (e !== "otros")).join(";");
+    }
 
-	// Process 'learningDiagnosedDifficulties'
-	if ( learningDiagnosedDifficulties && Array.isArray(learningDiagnosedDifficulties) ) {
-		learningDiagnosedDifficulties = learningDiagnosedDifficulties.join(";");
-	}
+    // Process 'learningDiagnosedDifficulties'
+    if (learningDiagnosedDifficulties && Array.isArray(learningDiagnosedDifficulties)) {
+        learningDiagnosedDifficulties = learningDiagnosedDifficulties.join(";");
+    }
 
-	// Handle `nationalOrigin`
-	if ( nationalOrigin === "otro" ) {
-		nationalOrigin = otherNationalOrigin;
-	}
+    // Handle `nationalOrigin`
+    if (nationalOrigin === "otro") {
+        nationalOrigin = otherNationalOrigin;
+    }
 
-	let response = null;
+    let response = null;
 
-	try {
-		// Update the student in the database
-		response = await database.query(`
+    try {
+        // Update the student in the database
+        response = await database.query(`
             UPDATE students
             SET name                          = COALESCE(?, name),
                 lastName                      = COALESCE(?, lastName),
@@ -512,161 +488,125 @@ routerStudents.put("/:studentId", authenticateToken, isTeacher, async (req, res)
                 otherEducationalSupport       = ?,
                 firstWords                    = ?
             WHERE id = ?
-		`, [
-			   name,
-			   lastName,
-			   age,
-			   sex,
-			   classroomId,
-			   school,
-			   classroomNumber,
-			   birthDate,
-			   socioEconomicLevel,
-			   nationalOrigin,
-			   learningReadingRisk,
-			   learningWritingRisk,
-			   familyBackground,
-			   specificSupportNeeds,
-			   otherSpecificSupportNeeds,
-			   learningDiagnosedDifficulties,
-			   educationalSupport,
-			   otherEducationalSupport,
-			   firstWords,
-			   studentId
-		   ]);
+        `, [name, lastName, age, sex, classroomId, school, classroomNumber, birthDate, socioEconomicLevel, nationalOrigin, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords, studentId]);
 
-		if ( response.affectedRows === 0 ) {
-			return res.status(404).json({ error: { id: "classrooms.detail.update.error.notFound" } });
-		}
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e.message || e } });
-	}
+        if (response.affectedRows === 0) {
+            return res.status(404).json({error: {id: "classrooms.detail.update.error.notFound"}});
+        }
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e.message || e}});
+    }
 
-	// Respond with the result of the update
-	res.status(200).json({ updated: response });
+    // Respond with the result of the update
+    res.status(200).json({updated: response});
 });
 
 routerStudents.delete("/:studentId", authenticateToken, isTeacher, async (req, res) => {
 
-	let { studentId } = req.params;
+    let {studentId} = req.params;
 
-	if ( !studentId ) {
-		return res.status(400).json({ error: { id: "classrooms.detail.delete.error.id" } });
-	}
+    if (!studentId) {
+        return res.status(400).json({error: {id: "classrooms.detail.delete.error.id"}});
+    }
 
-	let result = null;
+    let result = null;
 
-	try {
-		result = await database.query("DELETE FROM students WHERE id = ?", [studentId]);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+    try {
+        result = await database.query("DELETE FROM students WHERE id = ?", [studentId]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	if ( result.affectedRows === 0 ) {
-		return res.status(404).json({ error: { classroom: "classrooms.detail.delete.error.notExist" } });
-	}
+    if (result.affectedRows === 0) {
+        return res.status(404).json({error: {classroom: "classrooms.detail.delete.error.notExist"}});
+    }
 
-	res.status(200).json({ deleted: true });
+    res.status(200).json({deleted: true});
 });
 
 routerStudents.get("/checkLogin", authenticateToken, isStudent, async (req, res) => {
-	return res.status(200).json({ user: req.user });
+    return res.status(200).json({user: req.user});
 });
 
 routerStudents.get("/currentStudent", authenticateToken, isStudent, async (req, res) => {
 
-	let studentId = req.user.id;
+    let studentId = req.user.id;
 
-	try {
-		result = await database.query("SELECT s.* FROM students s where s.id = ?", [studentId]);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+    try {
+        result = await database.query("SELECT s.* FROM students s where s.id = ?", [studentId]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	if ( result.length <= 0 ) {
-		return res.status(500).json({ error: { type: "internalServerError" } });
-	}
+    if (result.length <= 0) {
+        return res.status(500).json({error: {type: "internalServerError"}});
+    }
 
-	res.status(200).json(result[ 0 ]);
+    res.status(200).json(result[0]);
 });
 
 routerStudents.get("/:studentId", authenticateToken, isTeacher, async (req, res) => {
 
-	let { studentId } = req.params;
-	let teacherId = req.user.id;
+    let {studentId} = req.params;
+    let teacherId = req.user.id;
 
-	if ( !teacherId ) {
-		return res.status(400).json({ error: { teacher: "classrooms.detail.error.teacher" } });
-	}
+    if (!teacherId) {
+        return res.status(400).json({error: {teacher: "classrooms.detail.error.teacher"}});
+    }
 
-	if ( !studentId ) {
-		return res.status(400).json({ error: { id: "classrooms.detail.error.student" } });
-	}
+    if (!studentId) {
+        return res.status(400).json({error: {id: "classrooms.detail.error.student"}});
+    }
 
-	let result = null;
+    let result = null;
 
-	try {
-		result = await database.query(
-			"SELECT s.* FROM students s JOIN classrooms c ON c.id = s.classroomId JOIN teachers t ON t.id = c.teacherId WHERE s.id = ? AND t.id = ?",
-			[studentId, teacherId]
-		);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+    try {
+        result = await database.query("SELECT s.* FROM students s JOIN classrooms c ON c.id = s.classroomId JOIN teachers t ON t.id = c.teacherId WHERE s.id = ? AND t.id = ?", [studentId, teacherId]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	if ( result.length <= 0 ) {
-		return res.status(404).json({ error: { classroom: "classrooms.detail.error.notExist" } });
-	}
+    if (result.length <= 0) {
+        return res.status(404).json({error: {classroom: "classrooms.detail.error.notExist"}});
+    }
 
-	res.status(200).json(result[ 0 ]);
+    res.status(200).json(result[0]);
 });
 
 routerStudents.get("/list/:classroomName", authenticateToken, isTeacher, async (req, res) => {
 
-	let { classroomName } = req.params;
-	let teacherId = req.user.id;
+    let {classroomName} = req.params;
+    let teacherId = req.user.id;
 
-	if ( !teacherId ) {
-		return res.status(400).json({ error: { teacher: "classrooms.detail.error.teacher" } });
-	}
+    if (!teacherId) {
+        return res.status(400).json({error: {teacher: "classrooms.detail.error.teacher"}});
+    }
 
-	if ( !classroomName ) {
-		return res.status(400).json({ error: { id: "classrooms.detail.error.classroom" } });
-	}
+    if (!classroomName) {
+        return res.status(400).json({error: {id: "classrooms.detail.error.classroom"}});
+    }
 
-	let result = null;
+    let result = null;
 
-	try {
-		result = await database.query(
-			"SELECT s.username, s.id, s.name, s.lastName, s.age FROM students s JOIN classrooms c ON c.teacherId = ? WHERE c.name = ? AND s.classroomId = c.id",
-			[teacherId, classroomName]
-		);
-	}
-	catch ( e ) {
-		return res.status(500).json({ error: { type: "internalServerError", message: e } });
-	}
-	finally {
+    try {
+        result = await database.query("SELECT s.username, s.id, s.name, s.lastName, s.age, s.avatarEnabled FROM students s JOIN classrooms c ON c.teacherId = ? WHERE c.name = ? AND s.classroomId = c.id", [teacherId, classroomName]);
+    } catch (e) {
+        return res.status(500).json({error: {type: "internalServerError", message: e}});
+    } finally {
 
-	}
+    }
 
-	if ( result.length <= 0 ) {
-		return res.status(404).json({ error: { classroom: "classrooms.detail.error.notExist" } });
-	}
+    if (result.length <= 0) {
+        return res.status(404).json({error: {classroom: "classrooms.detail.error.notExist"}});
+    }
 
-	res.status(200).json(result);
+    res.status(200).json(result);
 });
 
 module.exports = routerStudents;
