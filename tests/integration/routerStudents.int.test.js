@@ -53,7 +53,15 @@ describe("Students Router", () => {
 				.post("/students")
 				.set("Authorization", `Bearer ${ teacherToken }`)
 				.set("role", "teacher")
-				.send({ name: "Test", lastName: "Test", age: 8, classroomName: "class1T1" });
+				.send({
+					name: "Test",
+					lastName: "Test",
+					username: `test${Date.now()}`,
+					age: 8,
+					sex: "M",
+					birthDate: "2018-01-01",
+					classroomName: "class1T1"
+				});
 
 			expect(response.status).toBe(200);
 			expect(response.body).toHaveProperty("inserted");

@@ -85,6 +85,7 @@ describe("Students Router", () => {
 
 	describe("POST /students", () => {
 		it("should create a student with valid data", async () => {
+			database.query.mockResolvedValueOnce([]);
 			database.query.mockResolvedValueOnce([{ id: 1 }]);
 			database.query.mockResolvedValueOnce({ insertId: 1 });
 
@@ -92,10 +93,70 @@ describe("Students Router", () => {
 				.post("/students")
 				.set("Authorization", `Bearer ${ teacherToken }`)
 				.set("role", "teacher")
-				.send({ name: "Angelica", lastName: "Ross", age: 3, classroomName: "3C" });
+				.send({
+					name: "Angelica",
+					lastName: "Ross",
+					username: "angelica123",
+					age: 3,
+					sex: "F",
+					birthDate: "2020-01-01",
+					classroomName: "3C"
+				});
 
 			expect(response.status).toBe(200);
 			expect(response.body).toHaveProperty("inserted");
+		});
+
+		it("should return 400 if username is missing", async () => {
+			const response = await request(app)
+				.post("/students")
+				.set("role", "teacher")
+				.send({ name: "Angelica", lastName: "Ross", age: 3, classroomName: "3C" });
+
+			expect(response.status).toBe(400);
+			expect(response.body.error).toHaveProperty("username");
+		});
+
+		it("should return 409 if username already exists", async () => {
+			database.query.mockResolvedValueOnce([{ id: 2 }]);
+
+			const response = await request(app)
+				.post("/students")
+				.set("role", "teacher")
+				.send({
+					name: "Angelica",
+					lastName: "Ross",
+					username: "angelica123",
+					age: 3,
+					sex: "F",
+					birthDate: "2020-01-01",
+					classroomName: "3C"
+				});
+
+			expect(response.status).toBe(409);
+			expect(response.body.error).toHaveProperty("username");
+		});
+
+		it("should return 409 if username is claimed during insertion", async () => {
+			database.query.mockResolvedValueOnce([]);
+			database.query.mockResolvedValueOnce([{ id: 1 }]);
+			database.query.mockRejectedValueOnce({ code: "ER_DUP_ENTRY" });
+
+			const response = await request(app)
+				.post("/students")
+				.set("role", "teacher")
+				.send({
+					name: "Angelica",
+					lastName: "Ross",
+					username: "angelica123",
+					age: 3,
+					sex: "F",
+					birthDate: "2020-01-01",
+					classroomName: "3C"
+				});
+
+			expect(response.status).toBe(409);
+			expect(response.body.error).toHaveProperty("username");
 		});
 
 		it("should return 400 if name is empty", async () => {

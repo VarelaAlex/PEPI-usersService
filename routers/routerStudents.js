@@ -7,49 +7,13 @@ require("dotenv").config();
 
 const SEX_ENUM = ["M", "F"];
 
-let generateUsername = async (studentName, teacherId) => {
-    if (!studentName?.trim()) {
-        throw new Error("Student name is required");
-    }
-
-    // Normalizar el nombre igual que en el frontend
-    const normalizedName = studentName
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .split(" ")
-        .join("");
-
-    // Generar username con número aleatorio hasta encontrar uno disponible
-    let username = "";
-    let isAvailable = false;
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    while (!isAvailable && attempts < maxAttempts) {
-        const randomNumber = Math.floor(Math.random() * 900) + 100;
-        username = `${normalizedName}${teacherId}${randomNumber}`;
-
-        // Verificar si el username existe
-        let response = await database.query("SELECT id FROM students WHERE username = ?", [username]);
-        isAvailable = response.length === 0;
-        attempts++;
-    }
-
-    if (!isAvailable) {
-        throw new Error("Could not generate an available username after multiple attempts");
-    }
-
-    return username;
-};
-
 const routerStudents = express.Router();
 
 routerStudents.post("/login", async (req, res) => {
 
     let {username} = req.body;
 
-    if (!username?.trim()) {
+    if (typeof username !== "string" || !username.trim()) {
         return res.status(400).json({error: {username: "login.error.username.empty"}});
     }
 
@@ -115,6 +79,7 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
     let {
         name,
         lastName,
+        username,
         age,
         sex,
         classroomName,
@@ -145,6 +110,11 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
     if (!lastName?.trim()) {
         return res.status(400).json({error: {lastName: "classrooms.detail.create.error.lastName.empty"}});
     }
+
+    if (!username?.trim()) {
+        return res.status(400).json({error: {username: "classrooms.detail.create.error.username.empty"}});
+    }
+    username = username.trim();
 
     if (!age) {
         return res.status(400).json({error: {age: "classrooms.detail.create.error.age.empty"}});
@@ -214,11 +184,13 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
         learningDiagnosedDifficulties = learningDiagnosedDifficulties.join(";");
     }
 
-    // Generate username
-    let username = await generateUsername(name, teacherId);
-
     let response = null;
     try {
+        const existingUsername = await database.query("SELECT id FROM students WHERE username = ?", [username]);
+        if (existingUsername.length > 0) {
+            return res.status(409).json({error: {username: "classrooms.detail.create.error.username.exists"}});
+        }
+
         // Retrieve classroom ID
         let classroomResult = await database.query("SELECT id FROM classrooms WHERE name = ? AND teacherId = ?", [classroomName, teacherId]);
         if (classroomResult.length === 0) {
@@ -233,6 +205,9 @@ routerStudents.post("/", authenticateToken, isTeacher, async (req, res) => {
         // Insert student into the database
         response = await database.query("INSERT INTO students (username, name, lastName, age, sex, school, classroomNumber, birthDate, classroomId, socioEconomicLevel, nationalOrigin, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [username, name, lastName, age, sex, school, classroomNumber, birthDate, classroomId, socioEconomicLevel || null, nationalOrigin || null, learningReadingRisk, learningWritingRisk, familyBackground, specificSupportNeeds, otherSpecificSupportNeeds, learningDiagnosedDifficulties, educationalSupport, otherEducationalSupport, firstWords]);
     } catch (e) {
+        if (e.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({error: {username: "classrooms.detail.create.error.username.exists"}});
+        }
         return res.status(500).json({error: {type: "internalServerError", message: e.message || e}});
     }
 
